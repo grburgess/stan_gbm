@@ -22,14 +22,17 @@ functions {
 
 
     
-    log_likes[idx_background_nonzero] = (-square(b[idx_background_nonzero] - background_counts[idx_background_nonzero]) / (2 * s2[idx_background_nonzero])
-			+ observed_counts[idx_background_nonzero] * log(b[idx_background_nonzero] + expected_model_counts[idx_background_nonzero])
+    log_likes[idx_background_nonzero] = (-square(b[idx_background_nonzero] - background_counts[idx_background_nonzero]) ./ (2 * s2[idx_background_nonzero])
+			+ observed_counts[idx_background_nonzero] .* log(b[idx_background_nonzero] + expected_model_counts[idx_background_nonzero])
 			- b[idx_background_nonzero] - factorial_term[idx_background_nonzero]
 			- 0.5 * log(2 * pi()) - log(background_error[idx_background_nonzero]));	
 
 
-    log_likes[idx_background_zero] = lmultiply(observed_counts[idx_background_zero], expected_model_counts[idx_background_zero]) - factorial_term[idx_background_zero];	
+    for (n in 1:num_elements(idx_background_zero)) {
 
+    
+    log_likes[idx_background_zero[n]] = lmultiply(observed_counts[idx_background_zero[n]], expected_model_counts[idx_background_zero[n]]) - factorial_term[idx_background_zero[n]];	
+    }
     
     /* for (n in 1:N) { */
       
@@ -298,7 +301,7 @@ model {
       
       //print(pgstat(selected_counts, selected_background, selected_background_errors, selected_expectation'));
       
-      target += pgstat(selected_counts, selected_background, selected_background_errors, selected_expectation', idx_background_zero[n,m,: N_bkg_zero], idx_background_nonzero[n,m,: N_bkg_nonzero]  );
+      target += pgstat(selected_counts, selected_background, selected_background_errors, selected_expectation', idx_background_zero[n,m, :N_bkg_zero[n,m]], idx_background_nonzero[n,m, :N_bkg_nonzero[n,m]]  );
       
     }
 
