@@ -1,8 +1,6 @@
 functions {
 
-
-  real pgstat(vector observed_counts, vector background_counts, vector background_error, vector expected_model_counts) {
-
+  real pgstat(vector observed_counts, vector background_counts, vector background_error, vector expected_model_counts, int[] idx_background_zero, int[] idx_background_nonzero) {
 
     int N = num_elements(expected_model_counts);
     vector[N] log_likes;
@@ -18,32 +16,39 @@ functions {
 	       + background_counts - expected_model_counts - s2);
 
 
+    vector[N] factorial_term = expected_model_counts - lgamma(observed_counts +1 );
+    
     //print(expected_model_counts);
-    
-    for (n in 1:N) {
-      
-      if (background_counts[n] > 0) {
-	log_likes[n] = (-square(b[n] - background_counts[n]) / (2 * s2[n])
-			+ observed_counts[n] * log(b[n] + expected_model_counts[n])
-			- b[n] - expected_model_counts[n] - lgamma(observed_counts[n] +1 )
-			- 0.5 * log(2 * pi()) - log(background_error[n]));
-
-
-	
-
-      }
-
-      else {
-	log_likes[n] = lmultiply(observed_counts[n], expected_model_counts[n]) - expected_model_counts[n] - lgamma(observed_counts[n] + 1);	
-	print(log_likes[n]);
-	
-      }
-      
-      
-    }
 
 
     
+    log_likes[idx_background_nonzero] = (-square(b[idx_background_nonzero] - background_counts[idx_background_nonzero]) / (2 * s2[idx_background_nonzero])
+			+ observed_counts[idx_background_nonzero] * log(b[idx_background_nonzero] + expected_model_counts[idx_background_nonzero])
+			- b[idx_background_nonzero] - factorial_term[idx_background_nonzero]
+			- 0.5 * log(2 * pi()) - log(background_error[idx_background_nonzero]));	
+
+
+    log_likes[idx_background_zero] = lmultiply(observed_counts[idx_background_zero], expected_model_counts[idx_background_zero]) - factorial_term[idx_background_zero];	
+
+    
+    /* for (n in 1:N) { */
+      
+    /*   if (background_counts[n] > 0) { */
+    /* 	log_likes[n] = (-square(b[n] - background_counts[n]) / (2 * s2[n]) */
+    /* 			+ observed_counts[n] * log(b[n] + expected_model_counts[n]) */
+    /* 			- b[n] - factorial_term[n] */
+    /* 			- 0.5 * log(2 * pi()) - log(background_error[n]));	 */
+
+    /*   } */
+
+    /*   else { */
+
+    /* 	log_likes[n] = lmultiply(observed_counts[n], expected_model_counts[n]) - factorial_term[n];	 */
+	
+    /*   } */
+      
+      
+    /* } */
     
     return sum(log_likes);
 
