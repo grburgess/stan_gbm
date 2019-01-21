@@ -191,6 +191,11 @@ data {
   vector[max_n_chan] background_counts[N_intervals, max(N_dets)];
   vector[max_n_chan] background_errors[N_intervals, max(N_dets)];
 
+  int idx_background_zero[N_intervals, max(N_dets), max_n_chan];
+  int idx_background_nonzero[N_intervals, max(N_dets), max_n_chan];
+  int N_bkg_zero[N_intervals,max(N_dets)];
+  int N_bkg_nonzero[N_intervals,max(N_dets)];
+  
   real exposure[N_intervals, max(N_dets)];
 
   matrix[max_n_echan, max_n_chan] response[N_intervals, max(N_dets)];
@@ -293,7 +298,7 @@ model {
       
       //print(pgstat(selected_counts, selected_background, selected_background_errors, selected_expectation'));
       
-      target += pgstat(selected_counts, selected_background, selected_background_errors, selected_expectation');
+      target += pgstat(selected_counts, selected_background, selected_background_errors, selected_expectation', idx_background_zero[n,m,: N_bkg_zero], idx_background_nonzero[n,m,: N_bkg_nonzero]  );
       
     }
 
