@@ -6,7 +6,7 @@ functions {
     vector[N] log_likes;
 
 
-
+    
     
     
     vector[N] MB = background_counts + expected_model_counts;
@@ -20,7 +20,7 @@ functions {
     
     //print(expected_model_counts);
 
-
+ 
     
     log_likes[idx_background_nonzero] = (-square(b[idx_background_nonzero] - background_counts[idx_background_nonzero]) ./ (2 * s2[idx_background_nonzero])
 			+ observed_counts[idx_background_nonzero] .* log(b[idx_background_nonzero] + expected_model_counts[idx_background_nonzero])
