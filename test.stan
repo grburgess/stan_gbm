@@ -1,5 +1,21 @@
 functions {
 
+
+  vector background_model(vector observed_counts, vector background_counts, vector background_error, vector expected_model_counts) {
+
+    int N = num_elements(expected_model_counts);
+    
+    vector[N] MB = background_counts + expected_model_counts;
+    vector[N] s2 = square(background_error);
+
+    vector[N] b = 0.5 * (sqrt(square(MB) - 2 * s2 .* (MB - 2 * observed_counts) + square(s2))
+	       + background_counts - expected_model_counts - s2);
+    return b;
+    
+
+  }
+
+  
   real pgstat(vector observed_counts, vector background_counts, vector background_error, vector expected_model_counts, int[] idx_background_zero, int[] idx_background_nonzero) {
 
     int N = num_elements(expected_model_counts);
@@ -7,14 +23,9 @@ functions {
 
 
     
-    
-    
-    vector[N] MB = background_counts + expected_model_counts;
     vector[N] s2 = square(background_error);
 
-    vector[N] b = 0.5 * (sqrt(square(MB) - 2 * s2 .* (MB - 2 * observed_counts) + square(s2))
-	       + background_counts - expected_model_counts - s2);
-
+    vector[N] b = background_model(observed_counts, background_counts, background_error, expected_model_counts);
 
     vector[N] factorial_term = expected_model_counts - lgamma(observed_counts +1 );
     
@@ -34,24 +45,6 @@ functions {
     log_likes[idx_background_zero[n]] = lmultiply(observed_counts[idx_background_zero[n]], expected_model_counts[idx_background_zero[n]]) - factorial_term[idx_background_zero[n]];	
     }
     
-    /* for (n in 1:N) { */
-      
-    /*   if (background_counts[n] > 0) { */
-    /* 	log_likes[n] = (-square(b[n] - background_counts[n]) / (2 * s2[n]) */
-    /* 			+ observed_counts[n] * log(b[n] + expected_model_counts[n]) */
-    /* 			- b[n] - factorial_term[n] */
-    /* 			- 0.5 * log(2 * pi()) - log(background_error[n]));	 */
-
-    /*   } */
-
-    /*   else { */
-
-    /* 	log_likes[n] = lmultiply(observed_counts[n], expected_model_counts[n]) - factorial_term[n];	 */
-	
-    /*   } */
-      
-      
-    /* } */
     
     return sum(log_likes);
 
@@ -137,10 +130,7 @@ functions {
 	
     norm = flux * erg2keV / intflux;
 
-    if (intflux < 0) {
-      print({alpha, beta, epeak, flux, emin, emax, ec, esplit});
 
-    }
     for (n in 1:num_elements(energy)) {
       
       if (energy[n] < esplit) {
@@ -164,15 +154,10 @@ functions {
       .* (differential_flux(ebounds_lo, flux, alpha, beta, epeak, emin, emax)
 	  + 4 * differential_flux(0.5*(ebounds_lo + ebounds_hi), flux,  alpha,  beta, epeak, emin, emax)
 	  + differential_flux(ebounds_hi, flux, alpha, beta, epeak, emin, emax));
-    
-    
+      
   }
   
   
-  vector convole_drm(matrix expected_flux, matrix response ) {
-    
-    return rows_dot_product(expected_flux,response); 
-  }
 }
 
 data {
@@ -211,6 +196,11 @@ data {
   vector[N_intervals] dl;
   vector[N_intervals] z;
 
+
+  int N_gen_spectra;
+  vector[N_gen_spectra] model_energy;
+  
+
   
   
 }
@@ -233,22 +223,26 @@ parameters {
 
   vector<lower=-2., upper=1.>[N_intervals] alpha;
   vector<upper=-2.>[N_intervals] beta;
-  vector<lower=1, upper=5E4>[N_intervals] epeak;
+  vector<lower=1, upper=1E5>[N_intervals] epeak;
   vector<lower=0>[N_intervals] energy_flux;
 
-  //  real gamma;
-  // Real;
+  /* real gamma; */
+  /* real delta_raw; */
 
 
   
 }
 
 transformed parameters {
-
+  vector[max_n_chan] expected_model_counts[N_intervals, max(N_dets)];
+  
   /* vector[N_intervals] energy_flux; */
   /* vector[N_intervals] log_luminosity; */
+  /* real log_delta; */
+
+  /* log_delta = delta_raw + 52; */
   
-  /* log_luminosity = log10(delta) + gamma*log10(epeak); */
+  /* log_luminosity = log_delta + gamma*log10( (1+z).*epeak/300. ); */
 
   /* for (n in 1:N_intervals) { */
   /*   energy_flux[n] = 10^log_luminosity[n] / (4*pi()*dl2[n]); */
@@ -257,8 +251,23 @@ transformed parameters {
 
   // compute the folded counts
   
-  
+    for (n in 1:N_intervals) {
 
+      for (m in 1:N_dets[n]) {
+	
+	
+	expected_model_counts[n,m,:N_chan[n,m]] = ((to_row_vector(integral_flux(ebounds_lo[n, m, :N_echan[n, m]],
+										ebounds_hi[n, m, :N_echan[n, m]],
+										energy_flux[n],
+										alpha[n],
+										beta[n],
+										epeak[n],
+										emin[n],
+										emax[n])) * response[n, m,:N_echan[n,m],:N_chan[n,m]]) * exposure[n,m])';
+	
+      }
+    }
+  
   
 }
 
@@ -273,46 +282,63 @@ model {
   energy_flux ~ normal(1E-6,1E-2);
 
   /* gamma ~ normal(0,10); */
-  /* delta ~ normal(0,100); */
+  /* delta_raw ~ normal(0,3); */
   
   for (n in 1:N_intervals) {
 
     for (m in 1:N_dets[n]) {
       
-      vector[N_echan[n,m]] tmp_flux = integral_flux(ebounds_lo[n, m, :N_echan[n, m]], ebounds_hi[n, m, :N_echan[n, m]], energy_flux[n], alpha[n], beta[n], epeak[n], emin[n], emax[n]);
-
-
- 
       
-      row_vector[N_chan[n,m]] expected_model_counts = (to_row_vector(tmp_flux) * response[n, m,:N_echan[n,m],:N_chan[n,m]]) * exposure[n,m];
-
-      vector[N_channels_used[n,m]] selected_counts = observed_counts[n, m, mask[n,m,:N_channels_used[n,m]]]; 
-      vector[N_channels_used[n,m]] selected_background = background_counts[n, m, mask[n,m, :N_channels_used[n,m]] ]; 
-      vector[N_channels_used[n,m]] selected_background_errors = background_errors[n, m, mask[n,m,:N_channels_used[n,m]]];
-      row_vector[N_channels_used[n,m]] selected_expectation = expected_model_counts[mask[n,m,:N_channels_used[n,m]]];
-
-      /* print(n); */
-      /* print(m); */
-      
-      /* print(tmp_flux); */
-      
-      
-      //      print(selected_expectation);
-      
-      //print(pgstat(selected_counts, selected_background, selected_background_errors, selected_expectation'));
-      
-      target += pgstat(selected_counts, selected_background, selected_background_errors, selected_expectation', idx_background_zero[n,m, :N_bkg_zero[n,m]], idx_background_nonzero[n,m, :N_bkg_nonzero[n,m]]  );
+      target += pgstat(observed_counts[n, m, mask[n,m,:N_channels_used[n,m]]],
+		       background_counts[n, m, mask[n,m,:N_channels_used[n,m]]],
+		       background_errors[n, m, mask[n,m,:N_channels_used[n,m]]],
+		       expected_model_counts[n,m, mask[n,m,:N_channels_used[n,m]]],
+		       idx_background_zero[n,m, :N_bkg_zero[n,m]],
+		       idx_background_nonzero[n,m, :N_bkg_nonzero[n,m]]  );
       
     }
-
+    
   }
-
+  
   
   
 }
 
 
 generated quantities {
+
+  vector[N_gen_spectra] vfv_spectra[N_intervals];
+  vector[max_n_chan] count_ppc[N_intervals, max(N_dets)];
+
+
+  for (n in 1:N_intervals) {
+
+    vfv_spectra[n] =square(model_energy) .* differential_flux(model_energy, energy_flux[n], alpha[n], beta[n], epeak[n], emin[n], emax[n]);
+
+
+      
+ 
+    
+
+    for (m in 1:N_dets[n]) {
+
+        vector[N_channels_used[n,m]] ppc_background = background_model(observed_counts[n, m, mask[n,m,:N_channels_used[n,m]]],
+								       background_counts[n, m, mask[n,m,:N_channels_used[n,m]]],
+								       background_errors[n, m, mask[n,m,:N_channels_used[n,m]]],
+								       expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]]);
+	
+	vector[N_channels_used[n,m]] rate = ppc_background + expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]] ;
+	for (i in 1:N_channels_used[n,m]) {
+	  count_ppc[n,m,i] = poisson_rng( rate[i] );
+	}
+	
+    }
+    
+    
+    
+  }
+
+
   
 }
 
