@@ -52,10 +52,15 @@ data {
 
 transformed data {
   vector[N_intervals] dl2 = square(dl); 
+  
+
   int N_total_channels = 0;
   real emin = 10.;
   real emax = 1E6;
+  
+  
 
+  
   vector[max_n_echan] ebounds_add[N_intervals, max(N_dets)];
   vector[max_n_echan] ebounds_half[N_intervals, max(N_dets)];
   
@@ -88,8 +93,8 @@ parameters {
 
   vector<lower=-1.8, upper=1.>[N_intervals] alpha;
   vector<lower=-6., upper=-2.>[N_intervals] beta;
-  vector<lower=1, upper=1E4>[N_intervals] epeak;
-  vector<lower=0>[N_intervals] energy_flux;
+  vector<lower=0, upper=4>[N_intervals] log_epeak;
+  vector[N_intervals] log_energy_flux;
   
 }
 
@@ -103,7 +108,7 @@ transformed parameters {
     for (n in 1:N_intervals) {
 
       // norm, ec, epslit, pre 
-      pre_calc[n, :] = band_precalculation(energy_flux[n], alpha[n], beta[n], epeak[n], emin, emax);
+      pre_calc[n, :] = band_precalculation(10^log_energy_flux[n], alpha[n], beta[n], 10^log_epeak[n], emin, emax);
       
       for (m in 1:N_dets[n]) {
 	
@@ -132,8 +137,8 @@ model {
   
   alpha ~ normal(-1,.5);
   beta ~ normal(-3,1);
-  epeak ~ normal(500.,500.);
-  energy_flux ~ normal(1E-6,1E-2);
+  log_epeak ~ normal(2.,1.);
+  log_energy_flux ~ normal(-6,2);
   
   for (n in 1:N_intervals) {
 
@@ -164,6 +169,7 @@ generated quantities {
 
   vector[N_gen_spectra] vfv_spectra[N_intervals];
   vector[max_n_chan] count_ppc[N_intervals, max(N_dets)];
+  vector[max_n_chan] source_ppc[N_intervals, max(N_dets)];
   
 
   for (n in 1:N_intervals) {
@@ -183,6 +189,9 @@ generated quantities {
 								       expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]]);
 	
 	vector[N_channels_used[n,m]] rate = ppc_background + expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]] ;
+	vector[N_channels_used[n,m]] source_rate = expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]] ;
+
+	
 	for (i in 1:N_channels_used[n,m]) {
 
 	  if (rate[i]>2^30) {
@@ -198,6 +207,23 @@ generated quantities {
 	    count_ppc[n,m,i] = poisson_rng( rate[i] );
 	    
 	  }
+
+
+
+	  if (source_rate[i]>2^30) {
+	    
+	    
+	    source_ppc[n,m,i] = 0;
+	    
+	  }
+	  
+	  else {
+	    
+	    
+	    source_ppc[n,m,i] = poisson_rng( source_rate[i] );
+	    
+	  }
+	  
 	  
 	}
 	

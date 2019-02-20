@@ -1,7 +1,6 @@
 functions {
 #include pgstat.stan
-#include band.stan  
-  
+#include band_grb.stan
 }
 
 data {
@@ -91,7 +90,7 @@ parameters {
 
   vector<lower=-1.8, upper=1.>[N_intervals] alpha;
   vector<lower=-6., upper=-2.>[N_intervals] beta;
-  vector<lower=1, upper=1E4>[N_intervals] epeak;
+  vector<lower=0, upper=4>[N_intervals] epeak_log;
   //vector<lower=0>[N_intervals] energy_flux;
 
   vector[N_grbs] gamma_offset;
@@ -111,10 +110,12 @@ parameters {
 
 transformed parameters {
 
-  
+  real pre_calc[N_intervals, 4]; 
   vector[N_grbs] gamma;
   vector[N_grbs] delta;
+  vector[N_intervals] epeak;
   vector[N_intervals] log_energy_flux;
+  vector[N_intervals] energy_flux;
   vector[max_n_chan] expected_model_counts[N_intervals, max(N_dets)];
  
   gamma = gamma_mu + gamma_offset * gamma_sigma;
@@ -122,27 +123,34 @@ transformed parameters {
 
   
   log_energy_flux = delta[grb_id] + gamma[grb_id] .* alpha;   
+
+
+  energy_flux = exp(log_energy_flux);
   
   
   // compute the folded counts
   
     for (n in 1:N_intervals) {
 
+      epeak[n] = 10^epeak_log[n];
       // norm, ec, epslit, pre 
-      real pre_calc[4] = band_precalculation(10^log_energy_flux[n], alpha[n], beta[n], epeak[n], emin, emax);
+      pre_calc[n, :] = band_precalculation(energy_flux[n], alpha[n], beta[n], epeak[n], emin, emax);
       
       for (m in 1:N_dets[n]) {
+
+
+	
 	
 	expected_model_counts[n,m,:N_chan[n,m]] = ((to_row_vector(integral_flux(ebounds_lo[n, m, :N_echan[n, m]],
 										ebounds_hi[n, m, :N_echan[n, m]],
 										ebounds_add[n, m, :N_echan[n, m]],
 										ebounds_half[n, m, :N_echan[n, m]],
-										pre_calc[1],
-										pre_calc[2],
-										pre_calc[3],
+										pre_calc[n,1],
+										pre_calc[n,2],
+										pre_calc[n,3],
 										alpha[n],
 										beta[n],
-										pre_calc[4])) * response[n, m,:N_echan[n,m],:N_chan[n,m]]) * exposure[n,m])';
+										pre_calc[n,4])) * response[n, m,:N_echan[n,m],:N_chan[n,m]]) * exposure[n,m])';
 	
       }
     }
@@ -158,7 +166,7 @@ model {
   
   alpha ~ normal(-1,.5);
   beta ~ normal(-3,1);
-  epeak ~ normal(500.,500.);
+  epeak_log ~ normal(2.,1);
 
 
   gamma_mu ~ normal(3, 1);
@@ -198,13 +206,13 @@ model {
 generated quantities {
 
   vector[N_gen_spectra] vfv_spectra[N_intervals];
-  vector[max_n_chan] count_ppc[N_intervals, max(N_dets)];
-
+  //  vector[max_n_chan] count_ppc[N_intervals, max(N_dets)];
+  vector[max_n_chan] source_ppc[N_intervals, max(N_dets)];
   vector[N_correlation] correlations[N_grbs];
 
   for (n in 1:N_intervals) {
+    vfv_spectra[n] =square(model_energy) .* differential_flux(model_energy, pre_calc[n, 1], pre_calc[n, 2], pre_calc[n, 3], alpha[n], beta[n], pre_calc[n, 4]);
 
-#    vfv_spectra[n] =square(model_energy) .* differential_flux(model_energy, 10^log_energy_flux[n], alpha[n], beta[n], epeak[n], emin, emax);
 
 
       
@@ -213,27 +221,59 @@ generated quantities {
 
     for (m in 1:N_dets[n]) {
 
-        vector[N_channels_used[n,m]] ppc_background = background_model(observed_counts[n, m, mask[n,m,:N_channels_used[n,m]]],
-								       background_counts[n, m, mask[n,m,:N_channels_used[n,m]]],
-								       background_errors[n, m, mask[n,m,:N_channels_used[n,m]]],
-								       expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]]);
+        /* vector[N_channels_used[n,m]] ppc_background = background_model(observed_counts[n, m, mask[n,m,:N_channels_used[n,m]]], */
+	/* 							       background_counts[n, m, mask[n,m,:N_channels_used[n,m]]], */
+	/* 							       background_errors[n, m, mask[n,m,:N_channels_used[n,m]]], */
+	/* 							       expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]]); */
 	
-	vector[N_channels_used[n,m]] rate = ppc_background + expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]] ;
+      //	vector[N_channels_used[n,m]] rate = ppc_background + expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]] ;
+	vector[N_channels_used[n,m]] source_rate = expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]];
+
 	for (i in 1:N_channels_used[n,m]) {
 
-	  if (rate[i]>2^30) {
+
+	  /* if (rate[i]<=0) { */
+	  /*   print(pre_calc[n,:]); */
+	  /*   print(ppc_background); */
+
+
+	  /* } */
+
+
+	  
+	  /* if (rate[i]>2^30) { */
 	    
 
-	    count_ppc[n,m,i] = 0;
+	  /*   count_ppc[n,m,i] = 0; */
+	    
+	  /* } */
+	  
+	  /* else { */
+
+	    
+	  /*   count_ppc[n,m,i] = poisson_rng( rate[i] ); */
+	    
+	  /* } */
+
+
+	  
+	  if (source_rate[i]>2^30) {
+	    
+	    
+	    source_ppc[n,m,i] = 0;
 	    
 	  }
 	  
 	  else {
-
 	    
-	    count_ppc[n,m,i] = poisson_rng( rate[i] );
+	    
+	    source_ppc[n,m,i] = poisson_rng( source_rate[i] );
 	    
 	  }
+
+
+
+	  
 	  
 	}
 	
