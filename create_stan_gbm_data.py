@@ -82,7 +82,7 @@ all_data_sets = []
 grb_name = []
 grb_number = []
 
-for n, pha in enumerate(pha_files[:4]):
+for n, pha in enumerate(pha_files):
 
     grb = pha[0].split('/')[0]
 
