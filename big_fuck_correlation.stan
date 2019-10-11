@@ -63,7 +63,7 @@ transformed data {
 
 
   vector[N_intervals] log_zp1 = log10(z+1);
-  vector[N_intervals] log_dl2 =2*log10(dl) + log10(4*pi());
+  vector[N_intervals] log_dl2 =2*log10(dl) - log10(4*pi());
 
 
   vector[N_grbs] log_zp1_grb;
@@ -127,6 +127,13 @@ parameters {
   real<lower=0> gamma_sigma;
 
 
+  vector[N_grbs] phi_offset;
+  real phi_mu;
+  real<lower=0> phi_sigma;
+
+
+  
+
   vector[N_grbs] delta_offset;
   real delta_mu;
   real<lower=0> delta_sigma;
@@ -141,16 +148,19 @@ transformed parameters {
 
   real pre_calc[N_intervals, 4]; 
   vector[N_grbs] gamma;
+  vector[N_grbs] phi;
   vector[N_grbs] delta;
   vector[N_intervals] log_energy_flux;
   vector[N_intervals] epeak;
   vector[max_n_chan] expected_model_counts[N_intervals, max(N_dets)];
  
   gamma = gamma_mu + gamma_offset * gamma_sigma;
+  phi = phi_mu + phi_offset * phi_sigma;
   delta = delta_mu + 52  + delta_offset * delta_sigma;
 
+  // The correlation 
   
-  log_energy_flux = delta[grb_id] + gamma[grb_id] .* (log_epeak + log_zp1 - 2. ) -  log_dl2[grb_id];   
+  log_energy_flux = delta[grb_id] + gamma[grb_id] .* (log_epeak + log_zp1 - 2. ) -  log_dl2[grb_id]  +  phi[grb_id] .* alpha ;   
   
   
   // compute the folded counts
@@ -174,7 +184,7 @@ transformed parameters {
 										pre_calc[n,3],
 										alpha[n],
 										beta[n],
-										pre_calc[n,4])) * response[n, m,:N_echan[n,m],:N_chan[n,m]]))' * exposure[n,m];
+										pre_calc[n,4])) * response[n, m,:N_echan[n,m],:N_chan[n,m]]) * exposure[n,m])';
 
       }
     }
@@ -193,13 +203,16 @@ model {
   beta ~ normal(-3,1);
   log_epeak ~ normal(2.,1);
 
-  gamma_mu ~ normal(1.5, 1);
+  gamma_mu ~ normal(0, 5);
+  phi_mu ~ normal(0, 5);
   delta_mu ~ normal(0,4);
   
   gamma_offset ~ std_normal();
+  phi_offset ~ std_normal();
   delta_offset ~ std_normal();
-  
+
   gamma_sigma ~ normal(0, 5);
+  phi_sigma ~ normal(0, 5);
   delta_sigma ~ normal(0, 5);
 
   
@@ -232,51 +245,51 @@ generated quantities {
   vector[N_gen_spectra] vfv_spectra[N_intervals];
   //  vector[max_n_chan] count_ppc[N_intervals, max(N_dets)];
   vector[max_n_chan] source_ppc[N_intervals, max(N_dets)];
-  vector[N_correlation] correlations[N_grbs];
+  //  vector[N_correlation] correlations[N_grbs];
 
   for (n in 1:N_intervals) {
     vfv_spectra[n] =square(model_energy) .* differential_flux(model_energy, pre_calc[n, 1], pre_calc[n, 2], pre_calc[n, 3], alpha[n], beta[n], pre_calc[n, 4]);
     
-    /* for (m in 1:N_dets[n]) { */
+    for (m in 1:N_dets[n]) {
       
-    /*   /\* vector[N_channels_used[n,m]] ppc_background = background_model(observed_counts[n, m, mask[n,m,:N_channels_used[n,m]]], *\/ */
-    /*   /\* 							       background_counts[n, m, mask[n,m,:N_channels_used[n,m]]], *\/ */
-    /* 	/\* 							       background_errors[n, m, mask[n,m,:N_channels_used[n,m]]], *\/ */
-    /* 	/\* 							       expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]]); *\/ */
+      /* vector[N_channels_used[n,m]] ppc_background = background_model(observed_counts[n, m, mask[n,m,:N_channels_used[n,m]]], */
+      /* 							       background_counts[n, m, mask[n,m,:N_channels_used[n,m]]], */
+	/* 							       background_errors[n, m, mask[n,m,:N_channels_used[n,m]]], */
+	/* 							       expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]]); */
       
-    /*   //	vector[N_channels_used[n,m]] rate = ppc_background + expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]] ; */
-    /*   vector[N_channels_used[n,m]] source_rate = expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]]; */
+      //	vector[N_channels_used[n,m]] rate = ppc_background + expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]] ;
+      vector[N_channels_used[n,m]] source_rate = expected_model_counts[n, m, mask[n,m,:N_channels_used[n,m]]];
 
-    /*   for (i in 1:N_channels_used[n,m]) { */
+      for (i in 1:N_channels_used[n,m]) {
 	
 	
-    /* 	/\* if (rate[i]<=0) { *\/ */
-    /* 	/\*   print(pre_calc[n,:]); *\/ */
-    /* 	/\*   print(ppc_background); *\/	 */
-    /* 	/\* } *\/		   */
-    /* 	/\* if (rate[i]>2^30) { *\/ */
-    /* 	/\*   count_ppc[n,m,i] = 0; *\/	     */
-    /* 	/\* } *\/	   */
-    /* 	/\* else { *\/	     */
-    /* 	/\*   count_ppc[n,m,i] = poisson_rng( rate[i] ); *\/	     */
-    /* 	/\* } *\/	   */
-    /* 	if (source_rate[i]>2^30) { */
-    /* 	  source_ppc[n,m,i] = 0; */
-    /* 	} */
+	/* if (rate[i]<=0) { */
+	/*   print(pre_calc[n,:]); */
+	/*   print(ppc_background); */	
+	/* } */		  
+	/* if (rate[i]>2^30) { */
+	/*   count_ppc[n,m,i] = 0; */	    
+	/* } */	  
+	/* else { */	    
+	/*   count_ppc[n,m,i] = poisson_rng( rate[i] ); */	    
+	/* } */	  
+	if (source_rate[i]>2^30) {
+	  source_ppc[n,m,i] = 0;
+	}
 	
-    /* 	else { */
-    /*   	  source_ppc[n,m,i] = poisson_rng( source_rate[i] ); */
-    /* 	} */
-    /*   } */
-    /* } */
+	else {
+      	  source_ppc[n,m,i] = poisson_rng( source_rate[i] );
+	}
+      }
+    }
     
   }
 
 
-  for (n in 1:N_grbs) {
+  /* for (n in 1:N_grbs) { */
     
-    correlations[n] = delta[n] + gamma[n] * (model_correlation + log_zp1_grb[n] - 2 ) - log_dl2_grb[n];
+  /*   correlations[n] = delta[n] + gamma[n] * (model_correlation + log_zp1_grb[n] - 2 ) - log_dl2_grb[n]; */
     
-  }
+  /* } */
   
 }
